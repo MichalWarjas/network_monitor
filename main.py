@@ -10,7 +10,27 @@ import plotly.express as px
 from datetime import datetime
 
 # --- Global Variables ---
-captured_packets = []  # Keep this global list for thread-safe collection
+# Use a thread-safe container for packets
+class PacketStore:
+    def __init__(self):
+        self.packets = []
+        self.lock = threading.Lock()
+    
+    def add_packet(self, packet_info):
+        with self.lock:
+            self.packets.append(packet_info)
+    
+    def get_packets(self):
+        with self.lock:
+            packets = self.packets.copy()
+            return packets
+    
+    def clear(self):
+        with self.lock:
+            self.packets = []
+
+# Create global packet store
+packet_store = PacketStore()
 stop_sniffing_event = threading.Event()
 capture_thread = None
 protocol_names = {num: name[8:] for name, num in vars(socket).items() if name.startswith("IPPROTO")}
@@ -22,9 +42,9 @@ def get_protocol_name(protocol_number):
 
 def packet_callback(packet):
     """Callback function processed for each captured packet."""
-    global captured_packets
+    global packet_store
     
-    # Store in thread-safe global instead of directly in session state
+    # Store in thread-safe container instead of directly in session state
     if IP in packet:
         src_ip = packet[IP].src
         dst_ip = packet[IP].dst
@@ -34,7 +54,7 @@ def packet_callback(packet):
         timestamp = packet.time
 
         packet_info = {
-            "Timestamp": pd.to_datetime(timestamp, unit='s'),
+            "Timestamp": timestamp,  # Store as raw timestamp
             "Source IP": src_ip,
             "Destination IP": dst_ip,
             "Protocol Number": proto_num,
@@ -42,8 +62,8 @@ def packet_callback(packet):
             "Length": length
         }
         
-        # Store in thread-safe global list instead of accessing session state from a thread
-        captured_packets.append(packet_info)
+        # Store in thread-safe container
+        packet_store.add_packet(packet_info)
         # For debugging only
         print(f"Packet captured: {src_ip} -> {dst_ip} ({proto_name})")
 
@@ -82,6 +102,20 @@ if 'capture_running' not in st.session_state:
     st.session_state.capture_running = False
 if 'captured_packets' not in st.session_state:
     st.session_state.captured_packets = []
+
+# This function will be called to update the captured packets in the session state
+def update_packet_data():
+    new_packets = packet_store.get_packets()
+    if new_packets:
+        # Add new packets to session state
+        st.session_state.captured_packets.extend(new_packets)
+        # Clear the global container to avoid duplicates
+        packet_store.clear()
+        print(f"Updated session state with {len(new_packets)} new packets. Total: {len(st.session_state.captured_packets)}")
+    return len(new_packets) > 0
+
+# Call update function at the start of each rerun
+packets_updated = update_packet_data()
 
 st.title("📊 Real-Time Network Traffic Dashboard")
 st.markdown("""
@@ -132,16 +166,6 @@ st.sidebar.text(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
 # --- Main Dashboard Area ---
 placeholder = st.empty()
 
-# Synchronize packets from thread-safe global to session state
-# This runs in the main thread, so it's safe to access session state
-if captured_packets:  # Check if we have new packets to add
-    if 'captured_packets' not in st.session_state:
-        st.session_state.captured_packets = []
-    # Transfer new packets to session state
-    st.session_state.captured_packets.extend(captured_packets)
-    # Clear the global list to avoid duplicates
-    captured_packets.clear()
-    
 with placeholder.container():
     if not st.session_state.captured_packets:
         st.info("No packets captured yet. Start the capture or wait for packets.")
@@ -150,6 +174,7 @@ with placeholder.container():
     else:
         # Create DataFrame from captured packets
         df = pd.DataFrame(st.session_state.captured_packets)
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='s')  # Convert to datetime
         df = df.sort_values(by="Timestamp", ascending=False) # Sort by most recent
 
         st.subheader(f"Live Packet Feed ({len(df)} packets captured)")
