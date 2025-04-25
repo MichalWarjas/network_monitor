@@ -1,7 +1,7 @@
 # main.py
 import streamlit as st
 import pandas as pd
-from scapy.all import *
+from scapy.all import sniff
 from scapy.layers.inet import IP
 import threading
 import time
@@ -42,8 +42,10 @@ class PacketStore:
             self.packets = []
             logger.debug(f"Cleared {count} packets from store")
 
-# Create global packet store
-packet_store = PacketStore()
+# Create or retrieve persistent packet store across reruns
+if 'packet_store' not in st.session_state:
+    st.session_state.packet_store = PacketStore()
+packet_store = st.session_state.packet_store
 stop_sniffing_event = threading.Event()
 capture_thread = None
 protocol_names = {num: name[8:] for name, num in vars(socket).items() if name.startswith("IPPROTO")}
