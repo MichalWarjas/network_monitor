@@ -2,12 +2,21 @@
 import streamlit as st
 import pandas as pd
 from scapy.all import *
+from scapy.layers.inet import IP
 import threading
 import time
 from collections import Counter
 import socket
 import plotly.express as px
 from datetime import datetime
+import logging  # Added for debugging
+
+# Configure logging for debugging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # --- Global Variables ---
 # Use a thread-safe container for packets
@@ -19,21 +28,26 @@ class PacketStore:
     def add_packet(self, packet_info):
         with self.lock:
             self.packets.append(packet_info)
+            logger.debug(f"Added packet: {packet_info['Source IP']} → {packet_info['Destination IP']} ({packet_info['Protocol Name']})")
     
     def get_packets(self):
         with self.lock:
             packets = self.packets.copy()
+            logger.debug(f"Retrieved {len(packets)} packets from store")
             return packets
     
     def clear(self):
         with self.lock:
+            count = len(self.packets)
             self.packets = []
+            logger.debug(f"Cleared {count} packets from store")
 
 # Create global packet store
 packet_store = PacketStore()
 stop_sniffing_event = threading.Event()
 capture_thread = None
 protocol_names = {num: name[8:] for name, num in vars(socket).items() if name.startswith("IPPROTO")}
+logger.debug(f"Initialized protocol names: {protocol_names}")
 
 # --- Packet Sniffing Logic ---
 def get_protocol_name(protocol_number):
@@ -65,34 +79,36 @@ def packet_callback(packet):
         # Store in thread-safe container
         packet_store.add_packet(packet_info)
         # For debugging only
-        print(f"Packet captured: {src_ip} -> {dst_ip} ({proto_name})")
+        logger.debug(f"Packet captured: {src_ip} -> {dst_ip} ({proto_name})")
 
 def start_sniffing(interface=None):
     """Starts packet sniffing in a separate thread."""
     global stop_sniffing_event
     stop_sniffing_event.clear()
-    print(f"Starting sniffing on interface: {interface if interface else 'default'}")
+    logger.debug(f"Starting sniffing on interface: {interface if interface else 'default'}")
     try:
         sniff(prn=packet_callback, store=0, stop_filter=lambda p: stop_sniffing_event.is_set(), iface=interface)
-        print("Sniffing stopped.")
+        logger.debug("Sniffing stopped.")
     except OSError as e:
         st.error(f"Error starting capture: {e}. Try running with sudo or check interface name.")
+        logger.error(f"Error starting capture: {e}")
     except Exception as e:
         st.error(f"An unexpected error occurred during sniffing: {e}")
+        logger.error(f"Unexpected error during sniffing: {e}")
 
 def stop_sniffing():
     """Signals the sniffing thread to stop."""
     global stop_sniffing_event, capture_thread
     if capture_thread and capture_thread.is_alive():
-        print("Stopping sniffing...")
+        logger.debug("Stopping sniffing...")
         stop_sniffing_event.set()
         capture_thread.join(timeout=2)
         if capture_thread.is_alive():
-            print("Warning: Sniffing thread did not stop gracefully.")
+            logger.warning("Sniffing thread did not stop gracefully.")
         capture_thread = None
-        print("Capture thread joined.")
+        logger.debug("Capture thread joined.")
     else:
-        print("Sniffing not running or thread already stopped.")
+        logger.debug("Sniffing not running or thread already stopped.")
 
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="Network Traffic Dashboard")
@@ -111,7 +127,7 @@ def update_packet_data():
         st.session_state.captured_packets.extend(new_packets)
         # Clear the global container to avoid duplicates
         packet_store.clear()
-        print(f"Updated session state with {len(new_packets)} new packets. Total: {len(st.session_state.captured_packets)}")
+        logger.debug(f"Updated session state with {len(new_packets)} new packets. Total: {len(st.session_state.captured_packets)}")
     return len(new_packets) > 0
 
 # Call update function at the start of each rerun
