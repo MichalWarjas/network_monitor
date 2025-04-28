@@ -175,11 +175,11 @@ with col2:
         else:
             st.sidebar.warning("Capture is not running.")
 
-# Auto-refresh interval
+# Auto-refresh interval slider and timestamp
 refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", 1, 10, 5)
-
-# Auto-refresh mechanism
-st.sidebar.text(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
+last_updated = datetime.now().strftime('%H:%M:%S')
+st.sidebar.text(f"Last updated: {last_updated}")
+# Removed external package auto-refresh; keeping refresh logic at end
 
 # --- Main Dashboard Area ---
 placeholder = st.empty()
@@ -196,7 +196,7 @@ with placeholder.container():
         df = df.sort_values(by="Timestamp", ascending=False) # Sort by most recent
 
         st.subheader(f"Live Packet Feed ({len(df)} packets captured)")
-        st.dataframe(df.head(20), use_container_width=True) # Display recent packets
+        st.dataframe(df.head(20), use_container_width=True, height=400)  # Set fixed height to prevent UI jitter
 
         st.subheader("Traffic Analysis")
         col_a, col_b = st.columns(2)
@@ -209,7 +209,7 @@ with placeholder.container():
                 fig_proto = px.pie(protocol_counts, values=protocol_counts.values, names=protocol_counts.index,
                                    title="Packet Count by Protocol")
                 fig_proto.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig_proto, use_container_width=True)
+                st.plotly_chart(fig_proto, use_container_width=True, height=300)
             else:
                 st.info("No protocol data to display.")
 
@@ -220,7 +220,7 @@ with placeholder.container():
             if not volume_by_proto.empty:
                 fig_volume = px.bar(volume_by_proto, x=volume_by_proto.index, y=volume_by_proto.values,
                                     title="Total Data Volume by Protocol", labels={'y': 'Total Bytes', 'x': 'Protocol'})
-                st.plotly_chart(fig_volume, use_container_width=True)
+                st.plotly_chart(fig_volume, use_container_width=True, height=300)
             else:
                 st.info("No volume data to display.")
 
@@ -230,7 +230,7 @@ with placeholder.container():
         if not top_sources.empty:
             fig_sources = px.bar(top_sources, x=top_sources.index, y=top_sources.values,
                                  title="Top 10 Source IPs by Packet Count", labels={'y': 'Packet Count', 'x': 'Source IP'})
-            st.plotly_chart(fig_sources, use_container_width=True)
+            st.plotly_chart(fig_sources, use_container_width=True, height=300)
         else:
             st.info("No source IP data to display.")
 
@@ -240,7 +240,7 @@ with placeholder.container():
         if not top_destinations.empty:
             fig_dest = px.bar(top_destinations, x=top_destinations.index, y=top_destinations.values,
                               title="Top 10 Destination IPs by Packet Count", labels={'y': 'Packet Count', 'x': 'Destination IP'})
-            st.plotly_chart(fig_dest, use_container_width=True)
+            st.plotly_chart(fig_dest, use_container_width=True, height=300)
         else:
             st.info("No destination IP data to display.")
 
