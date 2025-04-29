@@ -47,7 +47,8 @@ if 'packet_store' not in st.session_state:
     st.session_state.packet_store = PacketStore()
 packet_store = st.session_state.packet_store
 stop_sniffing_event = threading.Event()
-capture_thread = None
+if 'capture_thread' not in st.session_state:
+    st.session_state.capture_thread = None
 protocol_names = {num: name[8:] for name, num in vars(socket).items() if name.startswith("IPPROTO")}
 logger.debug(f"Initialized protocol names: {protocol_names}")
 
@@ -100,14 +101,14 @@ def start_sniffing(interface=None):
 
 def stop_sniffing():
     """Signals the sniffing thread to stop."""
-    global stop_sniffing_event, capture_thread
-    if capture_thread and capture_thread.is_alive():
+    global stop_sniffing_event
+    if st.session_state.capture_thread and st.session_state.capture_thread.is_alive():
         logger.debug("Stopping sniffing...")
         stop_sniffing_event.set()
-        capture_thread.join(timeout=2)
-        if capture_thread.is_alive():
+        st.session_state.capture_thread.join(timeout=2)
+        if st.session_state.capture_thread.is_alive():
             logger.warning("Sniffing thread did not stop gracefully.")
-        capture_thread = None
+        st.session_state.capture_thread = None
         logger.debug("Capture thread joined.")
     else:
         logger.debug("Sniffing not running or thread already stopped.")
@@ -158,17 +159,17 @@ except Exception as e:
 col1, col2 = st.sidebar.columns(2)
 with col1:
     if st.button("Start Capture", key="start"):
-        if capture_thread is None or not capture_thread.is_alive():
+        if st.session_state.capture_thread is None or not st.session_state.capture_thread.is_alive():
             st.session_state.capture_running = True
-            capture_thread = threading.Thread(target=start_sniffing, args=(selected_interface,), daemon=True)
-            capture_thread.start()
+            st.session_state.capture_thread = threading.Thread(target=start_sniffing, args=(selected_interface,), daemon=True)
+            st.session_state.capture_thread.start()
             st.sidebar.success(f"Capture started on {selected_interface or 'default'}...")
         else:
             st.sidebar.warning("Capture is already running.")
 
 with col2:
     if st.button("Stop Capture", key="stop"):
-        if capture_thread and capture_thread.is_alive():
+        if st.session_state.capture_thread and st.session_state.capture_thread.is_alive():
             stop_sniffing()
             st.session_state.capture_running = False
             st.sidebar.success("Capture stopped.")
@@ -244,7 +245,8 @@ with placeholder.container():
         else:
             st.info("No destination IP data to display.")
 
-# Setup auto-refresh using Streamlit's own rerun mechanism
-time.sleep(refresh_interval)
-st.rerun()
+# Setup auto-refresh using Streamlit's own rerun mechanism only when capture is running
+if st.session_state.capture_running:
+    time.sleep(refresh_interval)
+    st.rerun()
 
